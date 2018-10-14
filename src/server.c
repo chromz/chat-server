@@ -1,106 +1,86 @@
-
+#define _GNU_SOURCE
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 
 #include <pthread.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define MESSAGE_BUFFER 500
-#define CLIENT_ADDRESS_LENGTH 100
+// List to keep track of socket file descriptors
+#define MAX_CONN_NUMBER 10000
 
-void start_server (int socket_fd, struct sockaddr_in *address)
+static int sfds[MAX_CONN_NUMBER];
+
+static void handle_error(char *msg)
 {
-	bind(socket_fd, (struct sockaddr *) address, sizeof *address);
-	printf("Esperando conexion...\n");
-	listen(socket_fd, 10);
+	perror(msg);
+	exit(EXIT_FAILURE);
 }
 
-void  send_message(int new_socket_fd, struct sockaddr *cl_addr)
+static void *handle_session(void *data)
 {
-	char message[MESSAGE_BUFFER];
-	while(fgets(message, MESSAGE_BUFFER, stdin) != NULL) {
-		if (strncmp(message, "/quit", 5) == 0) {
-			printf("Closing connection...\n");
-			exit(0);
-		}
-		sendto(new_socket_fd, message, MESSAGE_BUFFER, 0, (struct sockaddr *) &cl_addr, sizeof cl_addr);
-	}
+	return NULL;
 }
 
-void * receive(void * socket) {
-	int socket_fd, response;
-	char message[MESSAGE_BUFFER];
-	memset(message, 0, MESSAGE_BUFFER);
-	socket_fd = (int) socket;
-
-	while(true) {
-		response = recvfrom(socket_fd, message, MESSAGE_BUFFER, 0, NULL, NULL);
-		if (response) {
-			printf("%s", message);
-		}
-	}
-}
-
-
-int main(int argc, char**argv) {
+int main(int argc, char *argv[])
+{
+	int sfd, conn_numbr;
+	socklen_t client_addr_len;
+	struct sockaddr_in server_addr, client_addr;
 	if (argc < 2) {
-		printf("Uso: server [puerto] \n");
-		exit(1);
+		char buff[50];
+		sprintf(buff, "Usage: %s [port]\n", argv[0]);
+		handle_error(buff);
 	}
 
-	long port = strtol(argv[1], NULL, 10);
-	struct sockaddr_in serv, cl_addr;
-	int fd, length, response, new_socket_fd;
-	int connection;
-	char client_address[CLIENT_ADDRESS_LENGTH];
-	pthread_t thread;
-	char msg[100] = "";
-	
-	serv.sin_family = AF_INET;
-//	serv.sin_port = htons(8096);
-	serv.sin_port = port;
-	serv.sin_addr.s_addr = INADDR_ANY;
-	fd = socket(AF_INET, SOCK_STREAM, 0);
-
-	start_server(fd, &serv);
-
-//	bind(fd, (struct sockaddr *)&sesrv, sizeof(serv));
-//	listen(fd, 5); // maximo numero de conexiones
-
-	length = sizeof(cl_addr);
-	new_socket_fd = accept(fd, (struct sockaddr *) &cl_addr, &length);
-	if (new_socket_fd < 0) {
-		printf("Failed to connect\n");
-		exit(1);
+	int port = (int) strtol(argv[1], NULL, 10);
+	// Create socket fd
+	sfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (sfd < 0){
+		handle_error("Unable to create socket descriptor\n");
 	}
-	
-	inet_ntop(AF_INET, &(cl_addr.sin_addr), client_address, CLIENT_ADDRESS_LENGTH);
-	printf("Connected: %s\n", client_address);
-
-	// nuevo thread para recibir mensajes
-	pthread_create(&thread, NULL, receive, (void *) new_socket_fd);
-
-	// enviar mensaje
-	send_message(new_socket_fd, &cl_addr);
-
-	close(new_socket_fd);
-	close(fd);
-	pthread_exit(NULL);
-	return 0;
-	/*
-	while (connection = accept(fd, (struct sockaddr *)NULL, NULL)) {
-		int pid;
-		if ((pid = fork()) == 0) {
-			while(recv(connection, msg, 100, 0) > 0 ) {
-				printf("Message received: %s\n", msg);
-//				msg = " ";
-			}
-			exit(0);
+	memset(&server_addr, 0, sizeof(struct sockaddr_in));
+	memset(&client_addr, 0, sizeof(struct sockaddr_in));
+	server_addr.sin_family = AF_INET;
+	server_addr.sin_addr.s_addr = INADDR_ANY;
+	server_addr.sin_port = htons(port);
+	if (bind(sfd, (struct sockaddr *) &server_addr,
+				sizeof(struct sockaddr_in)) == -1) {
+		handle_error("Error binding to address\n");
+	}
+	if (listen(sfd, 5) == -1) {
+		handle_error("Error preparing socket for listening\n");
+	}
+	conn_numbr = 0;
+	client_addr_len = sizeof(client_addr);
+	printf("Socket server initialized at port %d\n", port);
+	while (1) {
+		sfds[conn_numbr] = accept4(sfd,
+				(struct sockaddr *) &client_addr,
+				&client_addr_len, SOCK_CLOEXEC);
+		if (sfds[conn_numbr] < 0) {
+			handle_error("Error accepting connection\n");
 		}
+		printf("Incoming connection from:\n");
+		printf("Address: %d\n", client_addr.sin_addr.s_addr);
+		printf("Port: %d\n", client_addr.sin_port);
+		pthread_t thread;
+		if (pthread_create(&thread,
+					NULL, handle_session,
+					(void *) &sfds[conn_numbr]) != 0) {
+			handle_error("Unable to create session thread\n");
+		}
+		printf("Pthread Created\n");
+		pthread_join(thread, NULL);
 	}
-	*/
+
+
+
+
+
+
+
+	return 0;
 }
