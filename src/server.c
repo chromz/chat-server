@@ -1,23 +1,26 @@
+
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+
+#include <pthread.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
-
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <netinet/in.h>
-#include <pthread.h>
 
 #define MESSAGE_BUFFER 500
 #define CLIENT_ADDRESS_LENGTH 100
 
-void * start_server (int socket_fd, struct sockaddr_in *address) {
+void start_server (int socket_fd, struct sockaddr_in *address)
+{
 	bind(socket_fd, (struct sockaddr *) address, sizeof *address);
 	printf("Esperando conexion...\n");
 	listen(socket_fd, 10);
 }
 
-void * send_message(int new_socket_fd, struct sockaddr *cl_addr) {
+void  send_message(int new_socket_fd, struct sockaddr *cl_addr)
+{
 	char message[MESSAGE_BUFFER];
 	while(fgets(message, MESSAGE_BUFFER, stdin) != NULL) {
 		if (strncmp(message, "/quit", 5) == 0) {
