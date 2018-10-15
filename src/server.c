@@ -58,6 +58,14 @@ static const char* prep_error(const char *msg_s)
 	return json_object_to_json_string(error_j);
 }
 
+static const char* prep_ok()
+{
+	json_object *error_j = json_object_new_object();
+	json_object *status = json_object_new_string("OK");
+	json_object_object_add(error_j, "status", status);
+	return json_object_to_json_string(error_j);
+}
+
 
 static void *handle_session(void *data)
 {
@@ -83,7 +91,10 @@ static void *handle_session(void *data)
 		close(socketfd);
 		return NULL;
 	}
-	printf("No errors in handshake, inserting into list...\n");
+	printf("Handshake approved\n");
+	const char *ok_msg = prep_ok();
+	write(socketfd, ok_msg, strlen(ok_msg));
+	// Enter the while loop
 	while (1) {
 		bytes_read = read(socketfd, buff, BUFFER_SIZE);
 	}
