@@ -1,5 +1,5 @@
 #define _GNU_SOURCE
-#include <netinet/in.h>
+#include <arpa/inet.h>
 #include <sys/queue.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -45,7 +45,7 @@ static void test_set_prop(json_bool *err, json_object *obj, char *key, json_obje
 	if (*err) {
 		return;
 	}
-	*err = json_object_object_get_ex(obj, key, dest);
+	*err = !json_object_object_get_ex(obj, key, dest);
 }
 
 static const char* prep_error(const char *msg_s)
@@ -67,10 +67,11 @@ static void *handle_session(void *data)
 	struct client_usr *newusr;
 	int socketfd = *(int *) data;
 	printf("Waiting for handshake...\n");
-	read(socketfd, buff, BUFFER_SIZE);
+	bytes_read = read(socketfd, buff, BUFFER_SIZE);
+	printf("Handshake: %s\n", buff);
 	clientshk_j = json_tokener_parse(buff);
 	json_bool error = 0;
-	if (!clientshk_j) {
+	if (!clientshk_j || bytes_read == -1) {
 		error = 1;
 	}
 	test_set_prop(&error, clientshk_j, "host", &host_j);
@@ -80,8 +81,12 @@ static void *handle_session(void *data)
 		const char *error_msg = prep_error("Invalid handshake");
 		write(socketfd, error_msg, strlen(error_msg));
 		close(socketfd);
+		return NULL;
 	}
 	printf("No errors in handshake, inserting into list...\n");
+	while (1) {
+		bytes_read = read(socketfd, buff, BUFFER_SIZE);
+	}
 	return NULL;
 }
 
