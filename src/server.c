@@ -16,24 +16,24 @@
 #define BUFFER_SIZE 1024
 
 struct client_usr {
-	char *id;
-	char *name;
-	char *status;
+	int id;
+	const char *name;
+	const char *status;
 };
 
-static pthread_mutex_t msg_lock;
+static pthread_mutex_t glock;
 static pthread_mutex_t c_lock;
 static int usrcnt = 0;
 
 struct cli_conn {
-	char *host;
-	char *origin;
+	const char *host;
+	const char *origin;
 	struct client_usr *usr;
 	int sfd;
-	SLIST_ENTRY(cli_conn) entries;
+	STAILQ_ENTRY(cli_conn) entries;
 };
 // User lists
-static SLIST_HEAD(slisthead, cli_conn) clis_head = SLIST_HEAD_INITIALIZER(clis_head);
+static STAILQ_HEAD(slisthead, cli_conn) clis_head = STAILQ_HEAD_INITIALIZER(clis_head);
 /* struct slisthead *clis_headp; */
 
 static void handle_error(char *msg)
@@ -60,18 +60,50 @@ static const char* prep_error(const char *msg_s)
 	return json_object_to_json_string(error_j);
 }
 
-static const char* prep_ok()
+static void print_stailq(void)
 {
-	char buff[4];
-	json_object *error_j = json_object_new_object();
-	json_object *status = json_object_new_string("OK");
-	json_object *user = json_object_new_object();
+	struct cli_conn *np;
+	STAILQ_FOREACH(np, &clis_head, entries) {
+		printf("Client %s\n", np->usr->name);
+	}
+}
+
+static const char* prep_ok(int sfd, const char *host,
+		const char *origin, const char *username)
+{
+	int id;
+	json_object *data, *status, *user, *id_j, *name, *c_status;
+	data = json_object_new_object();
+	status = json_object_new_string("OK");
+	user = json_object_new_object();
+	c_status = json_object_new_string("active");
+	name = json_object_new_string(username);
+	// Increment usrcnt (thread-safe)
 	pthread_mutex_lock(&c_lock);
-	
+	id = usrcnt++;
+	id_j = json_object_new_int(usrcnt++);
 	pthread_mutex_unlock(&c_lock);
-	/* json_object *usrid = json_object_new_string(); */
-	json_object_object_add(error_j, "status", status);
-	return json_object_to_json_string(error_j);
+	json_object_object_add(data, "status", status);
+	json_object_object_add(user, "id", id_j);
+	json_object_object_add(user, "name", name);
+	json_object_object_add(user, "status", c_status);
+	json_object_object_add(data, "user", user);
+
+	// Add user to user list
+	struct cli_conn *new_usr = malloc(sizeof(struct cli_conn));
+	new_usr->host = host;
+	new_usr->origin = origin;
+	new_usr->sfd = sfd;
+	new_usr->usr = malloc(sizeof(struct client_usr));
+	new_usr->usr->id = id;
+	new_usr->usr->name = username;
+	new_usr->usr->status = "active";
+	pthread_mutex_lock(&glock);
+	STAILQ_INSERT_TAIL(&clis_head, new_usr, entries);
+	pthread_mutex_unlock(&glock);
+	print_stailq();
+	
+	return json_object_to_json_string(data);
 }
 
 
@@ -100,7 +132,11 @@ static void *handle_session(void *data)
 		return NULL;
 	}
 	printf("Handshake approved\n");
-	const char *ok_msg = prep_ok();
+	const char *ok_msg = prep_ok(
+			socketfd,
+			json_object_get_string(host_j),
+			json_object_get_string(origin_j),
+			json_object_get_string(user_j));
 	write(socketfd, ok_msg, strlen(ok_msg));
 	// Enter the event loop
 	while (1) {
@@ -120,9 +156,9 @@ int main(int argc, char *argv[])
 		handle_error(buff);
 	}
 
-	SLIST_INIT(&clis_head);
+	STAILQ_INIT(&clis_head);
 
-	if (pthread_mutex_init(&msg_lock, NULL) != 0) { 
+	if (pthread_mutex_init(&glock, NULL) != 0) { 
 	        handle_error("Failed to initialize mutex\n"); 
     	} 
 
@@ -176,7 +212,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	pthread_mutex_destroy(&msg_lock);
+	pthread_mutex_destroy(&glock);
 	pthread_mutex_destroy(&c_lock);
 
 	/* while (!SLIST_EMPTY(&clis_head)) { */
