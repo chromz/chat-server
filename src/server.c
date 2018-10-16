@@ -21,7 +21,9 @@ struct client_usr {
 	char *status;
 };
 
-static pthread_mutex_t lock;
+static pthread_mutex_t msg_lock;
+static pthread_mutex_t c_lock;
+static int usrcnt = 0;
 
 struct cli_conn {
 	char *host;
@@ -60,8 +62,14 @@ static const char* prep_error(const char *msg_s)
 
 static const char* prep_ok()
 {
+	char buff[4];
 	json_object *error_j = json_object_new_object();
 	json_object *status = json_object_new_string("OK");
+	json_object *user = json_object_new_object();
+	pthread_mutex_lock(&c_lock);
+	
+	pthread_mutex_unlock(&c_lock);
+	/* json_object *usrid = json_object_new_string(); */
 	json_object_object_add(error_j, "status", status);
 	return json_object_to_json_string(error_j);
 }
@@ -94,7 +102,7 @@ static void *handle_session(void *data)
 	printf("Handshake approved\n");
 	const char *ok_msg = prep_ok();
 	write(socketfd, ok_msg, strlen(ok_msg));
-	// Enter the while loop
+	// Enter the event loop
 	while (1) {
 		bytes_read = read(socketfd, buff, BUFFER_SIZE);
 	}
@@ -114,10 +122,13 @@ int main(int argc, char *argv[])
 
 	SLIST_INIT(&clis_head);
 
-	/* if (pthread_mutex_init(&lock, NULL) != 0) { */ 
-	/*         handle_error("Failed to initialize mutex\n"); */ 
-    	/* } */ 
-  
+	if (pthread_mutex_init(&msg_lock, NULL) != 0) { 
+	        handle_error("Failed to initialize mutex\n"); 
+    	} 
+
+ 	if (pthread_mutex_init(&c_lock, NULL) != 0) { 
+	        handle_error("Failed to initialize mutex\n"); 
+    	}  
 
 	int port = (int) strtol(argv[1], NULL, 10);
 	// Create socket fd
@@ -164,6 +175,9 @@ int main(int argc, char *argv[])
 
 		}
 	}
+
+	pthread_mutex_destroy(&msg_lock);
+	pthread_mutex_destroy(&c_lock);
 
 	/* while (!SLIST_EMPTY(&clis_head)) { */
              /* n1 = SLIST_FIRST(&head); */
