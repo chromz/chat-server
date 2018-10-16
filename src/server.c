@@ -101,7 +101,6 @@ static const char* prep_ok(int sfd, const char *host,
 	pthread_mutex_lock(&glock);
 	STAILQ_INSERT_TAIL(&clis_head, new_usr, entries);
 	pthread_mutex_unlock(&glock);
-	print_stailq();
 	
 	return json_object_to_json_string(data);
 }
