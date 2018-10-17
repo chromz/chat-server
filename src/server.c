@@ -19,6 +19,7 @@ struct client_usr {
 	const char *id;
 	const char *name;
 	const char *status;
+	struct json_object *json;
 };
 
 static pthread_mutex_t glock;
@@ -80,7 +81,9 @@ static void alert_all_users(const char *id,
 	json_object_object_add(usrcnted, "action", action_j);
 	json_object_object_add(usrcnted, "user", usr);
 	msg = json_object_to_json_string(usrcnted);
+	printf("Message: %s\n", msg);
 	STAILQ_FOREACH(current, &clis_head, entries) {
+		printf("INSIDE\n");
 		if (strcmp(current->usr->id, id) != 0){
 			write(current->sfd, msg, strlen(msg));
 		}
@@ -119,6 +122,7 @@ static const char* prep_ok(int sfd, const char *host,
 	new_usr->usr->id = id_buff;
 	new_usr->usr->name = username;
 	new_usr->usr->status = "active";
+	new_usr->usr->json = user; 
 	alert_all_users(id_buff, user, "USER_CONNECTED");
 	pthread_mutex_lock(&glock);
 	STAILQ_INSERT_TAIL(&clis_head, new_usr, entries);
@@ -196,6 +200,10 @@ static void handle_action(struct json_object *action_j,
 	const char *response;
 	if (strcmp(action, "LIST_USER") == 0) {
 		response = handle_list_user(req);
+	} if (strcmp(action, "CHANGE_STATUS") == 0) {
+		/* response = handle_change_status(req); */
+	} else {
+		response = prep_error("Invalid action");
 	}
 	write(sfd, response, strlen(response));
 }
@@ -203,9 +211,13 @@ static void handle_action(struct json_object *action_j,
 
 static void handle_disconnect(struct cli_conn *usr)
 {
+
+	struct json_object *usr_j = usr->usr->json;
 	pthread_mutex_lock(&glock);
 	STAILQ_REMOVE(&clis_head, usr, cli_conn, entries);
+	free(usr);
 	pthread_mutex_unlock(&glock);
+	alert_all_users(usr->usr->id, usr_j, "USER_DISCONNECTED");
 }
 
 static void *handle_session(void *data)
@@ -326,7 +338,6 @@ int main(int argc, char *argv[])
 		printf("Pthread Created\n");
 		if (pthread_detach(thread) != 0) {
 			handle_error("Unable to detach pthread");
-
 		}
 	}
 
