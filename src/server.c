@@ -212,6 +212,11 @@ static void *handle_session(void *data)
 	// Enter the event loop
 	while (1) {
 		bytes_read = read(socketfd, buff, BUFFER_SIZE);
+		if (bytes_read == 0) {
+			printf("Client disconnected unexpectedly\n");
+			close(socketfd);
+			return NULL;
+		}
 		req = json_tokener_parse(buff);
 		test_set_prop(&error, req, "action", &action_prop);
 		if (error) {
