@@ -68,15 +68,15 @@ static void print_stailq(void)
 	}
 }
 
-static void alert_all_users_user_connected(const char *id,
-		struct json_object *usr)
+static void alert_all_users(const char *id,
+		struct json_object *usr, const char *action_text)
 {
 	pthread_mutex_lock(&glock);
 	struct json_object *usrcnted, *action_j;
 	struct cli_conn *current;
 	const char *msg;
 	usrcnted = json_object_new_object();
-	action_j = json_object_new_string("USER_CONNECTED");
+	action_j = json_object_new_string(action_text);
 	json_object_object_add(usrcnted, "action", action_j);
 	json_object_object_add(usrcnted, "user", usr);
 	msg = json_object_to_json_string(usrcnted);
@@ -119,7 +119,7 @@ static const char* prep_ok(int sfd, const char *host,
 	new_usr->usr->id = id_buff;
 	new_usr->usr->name = username;
 	new_usr->usr->status = "active";
-	alert_all_users_user_connected(id_buff, user);
+	alert_all_users(id_buff, user, "USER_CONNECTED");
 	pthread_mutex_lock(&glock);
 	STAILQ_INSERT_TAIL(&clis_head, new_usr, entries);
 	pthread_mutex_unlock(&glock);
