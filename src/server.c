@@ -71,7 +71,7 @@ static void print_stailq(void)
 static const char* prep_ok(int sfd, const char *host,
 		const char *origin, const char *username)
 {
-	char id_buff[1024];
+	char *id_buff = malloc(sizeof(char) * 1024);
 	json_object *data, *status, *user, *id_j, *name, *c_status;
 	data = json_object_new_object();
 	status = json_object_new_string("OK");
@@ -81,7 +81,7 @@ static const char* prep_ok(int sfd, const char *host,
 	// Increment usrcnt (thread-safe)
 	pthread_mutex_lock(&c_lock);
 	sprintf(id_buff, "%d", usrcnt++);
-	id_j = json_object_new_int(usrcnt);
+	id_j = json_object_new_string(id_buff);
 	pthread_mutex_unlock(&c_lock);
 	json_object_object_add(data, "status", status);
 	json_object_object_add(user, "id", id_j);
