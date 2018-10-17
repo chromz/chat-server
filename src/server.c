@@ -68,8 +68,29 @@ static void print_stailq(void)
 	}
 }
 
+static void alert_all_users_user_connected(const char *id,
+		struct json_object *usr)
+{
+	pthread_mutex_lock(&glock);
+	struct json_object *usrcnted, *action_j;
+	struct cli_conn *current;
+	const char *msg;
+	usrcnted = json_object_new_object();
+	action_j = json_object_new_string("USER_CONNECTED");
+	json_object_object_add(usrcnted, "action", action_j);
+	json_object_object_add(usrcnted, "user", usr);
+	msg = json_object_to_json_string(usrcnted);
+	STAILQ_FOREACH(current, &clis_head, entries) {
+		if (strcmp(current->usr->id, id) != 0){
+			write(current->sfd, msg, strlen(msg));
+		}
+	}
+	pthread_mutex_unlock(&glock);
+}
+
 static const char* prep_ok(int sfd, const char *host,
-		const char *origin, const char *username)
+		const char *origin, const char *username,
+		struct cli_conn **usr)
 {
 	char *id_buff = malloc(sizeof(char) * 1024);
 	json_object *data, *status, *user, *id_j, *name, *c_status;
@@ -98,9 +119,11 @@ static const char* prep_ok(int sfd, const char *host,
 	new_usr->usr->id = id_buff;
 	new_usr->usr->name = username;
 	new_usr->usr->status = "active";
+	alert_all_users_user_connected(id_buff, user);
 	pthread_mutex_lock(&glock);
 	STAILQ_INSERT_TAIL(&clis_head, new_usr, entries);
 	pthread_mutex_unlock(&glock);
+	*usr = new_usr;
 	
 	return json_object_to_json_string(data);
 }
@@ -173,8 +196,16 @@ static void handle_action(struct json_object *action_j,
 	const char *response;
 	if (strcmp(action, "LIST_USER") == 0) {
 		response = handle_list_user(req);
-		write(sfd, response, strlen(response));
 	}
+	write(sfd, response, strlen(response));
+}
+
+
+static void handle_disconnect(struct cli_conn *usr)
+{
+	pthread_mutex_lock(&glock);
+	STAILQ_REMOVE(&clis_head, usr, cli_conn, entries);
+	pthread_mutex_unlock(&glock);
 }
 
 static void *handle_session(void *data)
@@ -203,17 +234,19 @@ static void *handle_session(void *data)
 		return NULL;
 	}
 	printf("Handshake approved\n");
+	struct cli_conn *new_usr;
 	const char *ok_msg = prep_ok(
 			socketfd,
 			json_object_get_string(host_j),
 			json_object_get_string(origin_j),
-			json_object_get_string(user_j));
+			json_object_get_string(user_j), &new_usr);
 	write(socketfd, ok_msg, strlen(ok_msg));
 	// Enter the event loop
 	while (1) {
 		bytes_read = read(socketfd, buff, BUFFER_SIZE);
 		if (bytes_read == 0) {
 			printf("Client disconnected unexpectedly\n");
+			handle_disconnect(new_usr);
 			close(socketfd);
 			return NULL;
 		}
