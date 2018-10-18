@@ -23,12 +23,14 @@ struct client_usr {
 
 static pthread_mutex_t glock;
 static pthread_mutex_t c_lock;
+static pthread_mutex_t timer_lock;
 static int usrcnt = 0;
 
 struct cli_conn {
 	const char *host;
 	const char *origin;
 	struct client_usr *usr;
+	int inactive;
 	int sfd;
 	STAILQ_ENTRY(cli_conn) entries;
 };
@@ -116,6 +118,7 @@ static const char* prep_ok(int sfd, const char *host,
 	new_usr->host = host;
 	new_usr->origin = origin;
 	new_usr->sfd = sfd;
+	new_usr->inactive = 0;
 	new_usr->usr = malloc(sizeof(struct client_usr));
 	new_usr->usr->id = id_buff;
 	new_usr->usr->name = username;
@@ -322,7 +325,9 @@ static void *handle_session(void *data)
 	write(socketfd, ok_msg, strlen(ok_msg));
 	// Enter the event loop
 	while (1) {
+		memset(buff, 0, BUFFER_SIZE);
 		bytes_read = read(socketfd, buff, BUFFER_SIZE);
+		new_usr->inactive = 0;
 		if (bytes_read == 0) {
 			printf("Client disconnected unexpectedly\n");
 			handle_disconnect(new_usr);
@@ -344,6 +349,24 @@ static void *handle_session(void *data)
 			error = 0;
 		} else {
 			handle_action(action_prop, req, socketfd);
+		}
+	}
+	return NULL;
+}
+
+static void *ping_service(void *data)
+{
+	while(1) {
+		sleep(10);
+		struct cli_conn *np;
+		STAILQ_FOREACH(np, &clis_head, entries) {
+			np->inactive++;
+			if (np->inactive == 3) {
+				printf("SENDING INACTIVE SIGNAL\n");
+				np->usr->status = "inactive";
+				struct json_object *user_json = conn_to_usr_json(np);
+				alert_all_users(np->usr->id, user_json, "CHANGED_STATUS");
+			}
 		}
 	}
 	return NULL;
@@ -391,6 +414,11 @@ int main(int argc, char *argv[])
 	conn_numbr = 0;
 	client_addr_len = sizeof(client_addr);
 	printf("Socket server initialized at port %d\n", port);
+	pthread_t ping_t;
+	if (pthread_create(&ping_t, NULL, ping_service, NULL) != 0){
+		printf("Unable to start ping service\n");
+		exit(1);
+	}
 	while (1) {
 		nsfd = accept4(sfd,
 				(struct sockaddr *) &client_addr,
