@@ -19,7 +19,6 @@ struct client_usr {
 	const char *id;
 	const char *name;
 	const char *status;
-	struct json_object *json;
 };
 
 static pthread_mutex_t glock;
@@ -83,7 +82,6 @@ static void alert_all_users(const char *id,
 	msg = json_object_to_json_string(usrcnted);
 	printf("Message: %s\n", msg);
 	STAILQ_FOREACH(current, &clis_head, entries) {
-		printf("INSIDE\n");
 		if (strcmp(current->usr->id, id) != 0){
 			write(current->sfd, msg, strlen(msg));
 		}
@@ -122,7 +120,6 @@ static const char* prep_ok(int sfd, const char *host,
 	new_usr->usr->id = id_buff;
 	new_usr->usr->name = username;
 	new_usr->usr->status = "active";
-	new_usr->usr->json = user; 
 	alert_all_users(id_buff, user, "USER_CONNECTED");
 	pthread_mutex_lock(&glock);
 	STAILQ_INSERT_TAIL(&clis_head, new_usr, entries);
@@ -216,6 +213,33 @@ static const char *handle_msg(struct json_object *req) {
 	return json_object_to_json_string(response);
 }
 
+static const char *handle_change_status(struct json_object *req)
+{
+	struct json_object *response, *status_ok;
+	struct json_object *user_j, *status_j;
+	json_bool error = 0;
+	test_set_prop(&error, req, "user", &user_j);
+	test_set_prop(&error, req, "status", &status_j);
+	if (error) {
+		return prep_error("Invalid action form");
+	}
+	struct cli_conn *np;
+	const char *user_id = json_object_get_string(user_j);
+	const char *new_status = json_object_get_string(status_j);
+	struct json_object *user_json = NULL;
+	STAILQ_FOREACH(np, &clis_head, entries) {
+		if (strcmp(user_id, np->usr->id) == 0) {
+			np->usr->status = new_status;
+			user_json = conn_to_usr_json(np);
+		}
+	}
+	alert_all_users(user_id, user_json, "CHANGED_STATUS");
+	response = json_object_new_object();
+	status_ok = json_object_new_string("OK");
+	json_object_object_add(response, "status", status_ok);
+	return json_object_to_json_string(response);
+}
+
 static void handle_action(struct json_object *action_j,
 		struct json_object *req, int sfd)
 {
@@ -225,12 +249,12 @@ static void handle_action(struct json_object *action_j,
 		response = handle_list_user(req);
 	} else if (strcmp(action, "SEND_MESSAGE") == 0) {
 		response = handle_msg(req);
-
-	} if (strcmp(action, "CHANGE_STATUS") == 0) {
-		/* response = handle_change_status(req); */
+	} else if (strcmp(action, "CHANGE_STATUS") == 0) {
+		response = handle_change_status(req);
 	} else {
 		response = prep_error("Invalid action");
 	}
+	printf("MESSAGE %s\n", response);
 	write(sfd, response, strlen(response));
 }
 
@@ -238,7 +262,7 @@ static void handle_action(struct json_object *action_j,
 static void handle_disconnect(struct cli_conn *usr)
 {
 
-	struct json_object *usr_j = usr->usr->json;
+	struct json_object *usr_j = conn_to_usr_json(usr);
 	pthread_mutex_lock(&glock);
 	STAILQ_REMOVE(&clis_head, usr, cli_conn, entries);
 	free(usr);
