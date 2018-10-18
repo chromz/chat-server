@@ -189,6 +189,29 @@ static const char *handle_list_user(struct json_object *req)
 
 }
 
+static const char *handle_msg(struct json_object *req) {
+	// read attributes from request
+	struct json_object *req_from, *req_to, *req_msg;
+	// TODO: leer data del request
+
+	// attributes to add in response
+	struct json_object *response, *action_prop, *from, *to, *message;
+	response = json_object_new_object();
+	action_prop = json_object_new_string("RECEIVE_MESSAGE");
+	from = json_object_new_string("id usuario de");
+	to = json_object_new_string("id usuario para");
+	message = json_object_new_string("mensajito");
+
+	// insert properties to json
+	json_object_object_add(response, "action", action_prop);
+	json_object_object_add(response, "from", from);
+	json_object_object_add(response, "to", to);
+	json_object_object_add(response, "message", message);
+
+	// return built json to string
+	return json_object_to_json_string(response);
+}
+
 static void handle_action(struct json_object *action_j,
 		struct json_object *req, int sfd)
 {
@@ -196,6 +219,8 @@ static void handle_action(struct json_object *action_j,
 	const char *response;
 	if (strcmp(action, "LIST_USER") == 0) {
 		response = handle_list_user(req);
+	} else if (strcmp(action, "SEND_MESSAGE") == 0) {
+		response = handle_msg(req);
 	}
 	write(sfd, response, strlen(response));
 }
