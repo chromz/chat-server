@@ -312,6 +312,13 @@ static void *handle_session(void *data)
 			close(socketfd);
 			return NULL;
 		}
+		if (strcmp(buff, "BYE") == 0) {
+			const char *bye = "BYE";
+			handle_disconnect(new_usr);
+			write(socketfd, bye, strlen(bye));
+			close(socketfd);
+			return NULL;
+		}
 		req = json_tokener_parse(buff);
 		test_set_prop(&error, req, "action", &action_prop);
 		if (error) {
