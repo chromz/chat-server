@@ -191,26 +191,43 @@ static const char *handle_list_user(struct json_object *req)
 }
 
 static const char *handle_msg(struct json_object *req) {
-	// read attributes from request
-	struct json_object *req_from, *req_to, *req_msg;
-	// TODO: leer data del request
+	
+	// read attributes from request	
+	struct json_object *action_j, *from_j, *to_j, *message_j;
 
+	json_bool error = 0;
+	test_set_prop(&error, req, "action", &action_j);
+	test_set_prop(&error, req, "from", &from_j);
+	test_set_prop(&error, req, "to", &to_j);
+	test_set_prop(&error, req, "message", &message_j);
+
+	if (error) {
+		return prep_error("Invalid request");
+	}
+
+	const char *to_id = json_object_get_string(to_j);
 	// attributes to add in response
 	struct json_object *response, *action_prop, *from, *to, *message;
 	response = json_object_new_object();
 	action_prop = json_object_new_string("RECEIVE_MESSAGE");
-	from = json_object_new_string("id usuario de");
-	to = json_object_new_string("id usuario para");
-	message = json_object_new_string("mensajito");
-
-	// insert properties to json
 	json_object_object_add(response, "action", action_prop);
-	json_object_object_add(response, "from", from);
-	json_object_object_add(response, "to", to);
-	json_object_object_add(response, "message", message);
+	json_object_object_add(response, "from", from_j);
+	json_object_object_add(response, "to", to_j);
+	json_object_object_add(response, "message", message_j);
+	struct cli_conn *np;
+	STAILQ_FOREACH(np, &clis_head, entries) {
+		if (strcmp(to_id, np->usr->id) == 0) {
+			const char *msg = json_object_to_json_string(response);
+			write(np->sfd, msg, strlen(msg));
+		}
+	}
 
 	// return built json to string
-	return json_object_to_json_string(response);
+	struct json_object *r, *status_ok;
+	r = json_object_new_object();
+	status_ok = json_object_new_string("OK");
+	json_object_object_add(r , "status", status_ok);
+	return json_object_to_json_string(r);
 }
 
 static const char *handle_change_status(struct json_object *req)
